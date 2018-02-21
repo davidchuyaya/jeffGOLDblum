@@ -2,18 +2,19 @@ pragma solidity ^0.4.0;
 
 // TODO: figure out how to make private
 contract Vote {
-        mapping(address => bool) private voted;
+    mapping(address => bool) private voted;
 
-        function Vote() public {}
-        
-        function getVoted(address creditor) public returns (bool) {
-            return voted[creditor];
-        }
+    function Vote() public {}
 
-        function setVoted(address creditor, bool _voted) public {
-            voted[creditor] = _voted;
-        }
+    function getVoted(address creditor) public view returns (bool) {
+        return voted[creditor];
+    }
+
+    function setVoted(address creditor, bool _voted) public {
+        voted[creditor] = _voted;
+    }
 }
+
 
 contract JeffGOLDblum {
     // represents a member of the group of lenders
@@ -60,57 +61,8 @@ contract JeffGOLDblum {
         amountLent = 0;
     }
 
-    function addCreditor(address creditor) private {
-        creditorAddrs.push(creditor);
-        creditors[creditor].index = creditorAddrs.length - 1;
-    }
-
-    function removeCreditor(address creditor) private {
-        address lastCreditor = creditorAddrs[creditorAddrs.length - 1];
-        creditorAddrs[creditors[creditor].index] = lastCreditor;
-        delete creditorAddrs[creditorAddrs.length - 1];
-    }
-
-    function addDebtor(address debtor) private {
-        debtorAddrs.push(debtor);
-        debtors[debtor].index = debtorAddrs.length - 1;
-    }
-
-    function removeDebtor(address debtor) private {
-        address lastDebtor = debtorAddrs[debtorAddrs.length - 1];
-        debtorAddrs[debtors[debtor].index] = lastDebtor;
-        delete debtorAddrs[debtorAddrs.length - 1];
-    }
-
-    function addRequestor(address requestor) private {
-        requestorAddrs.push(requestor);
-        requestors[requestor].index = requestorAddrs.length - 1;
-    }
-
-    function removeRequestor(address requestor) private {
-        address lastRequestor = requestorAddrs[requestorAddrs.length - 1];
-        requestorAddrs[requestors[requestor].index] = lastRequestor;
-        delete requestorAddrs[requestorAddrs.length - 1];
-    }
-
-    function isCreditor(address creditor) public returns (bool) {
+    function isCreditor(address creditor) public view returns (bool) {
         return creditorAddrs[creditors[creditor].index] == creditor;
-    }
-
-    function resetRequestor(address requestor) private {
-        requestors[requestor].votesYea = 0;
-        requestors[requestor].votesNay = 0;
-        requestors[requestor].requestAmount = 0;
-        requestors[requestor].index = 0;
-        // TODO: Do we need to selfdestruct the whoVoted subcontract?
-    }
-
-    function resetDebtor(address debtor) private {
-        debtors[debtor].loanAmount = 0;
-        debtors[debtor].balance = 0;
-        debtors[debtor].interest = 0;
-        debtors[debtor].outstandingLoanAmount = 0;
-        debtors[debtor].outstandingInterestAmount = 0;
     }
 
     function deposit() public payable {
@@ -179,7 +131,7 @@ contract JeffGOLDblum {
             debtors[msg.sender].balance += requestors[requestor].requestAmount;
             debtors[msg.sender].interest += requestors[requestor].requestAmount / 100;
             debtors[msg.sender].outstandingLoanAmount +=
-                requestors[requestor].requestAmount + debtors[msg.sender].interest;
+            requestors[requestor].requestAmount + debtors[msg.sender].interest;
             addDebtor(msg.sender);
         } else if (requestors[requestor].votesNay >= creditorAddrs.length / 2) {
             resetRequestor(requestor);
@@ -193,13 +145,14 @@ contract JeffGOLDblum {
             return false;
         }
 
-        target.send(amount);
-        debtors[msg.sender].balance -= amount;
-
-        return true;
+        if (target.send(amount)) {
+            debtors[msg.sender].balance -= amount;
+            return true;
+        }
+        return false;
     }
 
-    function makePayment() public payable {
+    function makePayment() public payable returns (bool) {
         uint subtractAmount = msg.value;
         if (msg.value > debtors[msg.sender].outstandingLoanAmount) {
             subtractAmount = debtors[msg.sender].outstandingLoanAmount;
@@ -212,7 +165,60 @@ contract JeffGOLDblum {
         }
 
         for (uint i = 0; i < creditorAddrs.length; i++) {
-            creditorAddrs[i].send(msg.value / creditorAddrs.length);
+            bool sent = creditorAddrs[i].send(msg.value / creditorAddrs.length);
+            if (!sent) {
+                return false;
+            }
         }
+        return true;
+    }
+
+    function addCreditor(address creditor) private {
+        creditorAddrs.push(creditor);
+        creditors[creditor].index = creditorAddrs.length - 1;
+    }
+
+    function removeCreditor(address creditor) private {
+        address lastCreditor = creditorAddrs[creditorAddrs.length - 1];
+        creditorAddrs[creditors[creditor].index] = lastCreditor;
+        delete creditorAddrs[creditorAddrs.length - 1];
+    }
+
+    function addDebtor(address debtor) private {
+        debtorAddrs.push(debtor);
+        debtors[debtor].index = debtorAddrs.length - 1;
+    }
+
+    function removeDebtor(address debtor) private {
+        address lastDebtor = debtorAddrs[debtorAddrs.length - 1];
+        debtorAddrs[debtors[debtor].index] = lastDebtor;
+        delete debtorAddrs[debtorAddrs.length - 1];
+    }
+
+    function addRequestor(address requestor) private {
+        requestorAddrs.push(requestor);
+        requestors[requestor].index = requestorAddrs.length - 1;
+    }
+
+    function removeRequestor(address requestor) private {
+        address lastRequestor = requestorAddrs[requestorAddrs.length - 1];
+        requestorAddrs[requestors[requestor].index] = lastRequestor;
+        delete requestorAddrs[requestorAddrs.length - 1];
+    }
+
+    function resetRequestor(address requestor) private {
+        requestors[requestor].votesYea = 0;
+        requestors[requestor].votesNay = 0;
+        requestors[requestor].requestAmount = 0;
+        requestors[requestor].index = 0;
+        // TODO: Do we need to selfdestruct the whoVoted subcontract?
+    }
+
+    function resetDebtor(address debtor) private {
+        debtors[debtor].loanAmount = 0;
+        debtors[debtor].balance = 0;
+        debtors[debtor].interest = 0;
+        debtors[debtor].outstandingLoanAmount = 0;
+        debtors[debtor].outstandingInterestAmount = 0;
     }
 }
